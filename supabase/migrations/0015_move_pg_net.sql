@@ -1,0 +1,17 @@
+-- NOT APPLIED -- kept as a record so this is not retried.
+--
+-- Supabase's linter warns that pg_net is installed in `public`
+-- (lint 0014_extension_in_public). The obvious fix does not work:
+--
+--   alter extension pg_net set schema extensions;
+--   -- ERROR: 0A000: extension "pg_net" does not support SET SCHEMA
+--
+-- pg_net is not relocatable. The only alternative is DROP + CREATE, which
+-- would tear down the `net` schema (including net._http_response) and briefly
+-- break the oda-daily-sync cron job that depends on net.http_post().
+--
+-- Left as-is deliberately. The exposure is small: only the extension
+-- *registration* is in public -- every callable function (net.http_post,
+-- net.http_get) lives in the `net` schema, so nothing shadowable sits in
+-- public. Accepting a WARN here is better than dropping working scheduling
+-- infrastructure to satisfy a linter.

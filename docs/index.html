@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="no">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Oda Historikk</title>
+<style>
+/* Palette from the dataviz reference instance. Roles, not raw hex, everywhere
+   below. Dark values are re-stepped for the dark surface -- not an inversion --
+   and declared under both the OS media query and the data-theme scope. */
+:root{
+  color-scheme: light;
+  --plane:#f9f9f7; --surface:#fcfcfb;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --baseline:#c3c2b7; --hairline:rgba(11,11,11,.10);
+  --series-1:#2a78d6;
+  --pole-up:#e34948;      /* dearer  */
+  --pole-down:#2a78d6;    /* cheaper */
+  --neutral:#f0efec;
+  --good:#006300;
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19;
+    --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --hairline:rgba(255,255,255,.10);
+    --series-1:#3987e5; --pole-up:#e66767; --pole-down:#3987e5;
+    --neutral:#383835; --good:#0ca30c;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19;
+  --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --baseline:#383835; --hairline:rgba(255,255,255,.10);
+  --series-1:#3987e5; --pole-up:#e66767; --pole-down:#3987e5;
+  --neutral:#383835; --good:#0ca30c;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);
+     font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:840px;margin:0 auto;padding:2.5rem 1.25rem 5rem}
+h1{font-size:1.5rem;margin:0 0 .2rem}
+.lede{color:var(--ink-2);margin:0 0 2rem;font-size:.95rem}
+
+.card{background:var(--surface);border:1px solid var(--hairline);
+      border-radius:14px;padding:1.35rem 1.4rem;margin-bottom:1.1rem}
+.card h2{font-size:1rem;margin:0 0 .15rem;font-weight:650}
+.card .note{color:var(--muted);font-size:.85rem;margin:0 0 1rem}
+
+/* KPI row of stat tiles -- the headline numbers are not charts. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:.9rem;margin-bottom:1.1rem}
+.kpi{background:var(--surface);border:1px solid var(--hairline);border-radius:14px;padding:1.1rem 1.2rem}
+.kpi .k{font-size:.8rem;color:var(--muted);margin-bottom:.35rem}
+.kpi .v{font-size:1.9rem;line-height:1.1;font-weight:640;letter-spacing:-.01em;white-space:nowrap}
+.kpi .s{font-size:.82rem;color:var(--ink-2);margin-top:.2rem}
+.hero .v{font-size:2.25rem}
+
+/* Chart chrome */
+.tick{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.rowlabel{fill:var(--ink-2);font-size:12.5px}
+.rowvalue{fill:var(--ink-2);font-size:12.5px;font-variant-numeric:tabular-nums}
+svg{display:block;overflow:visible}
+.scroll{overflow-x:auto}
+
+.tip{position:fixed;z-index:50;pointer-events:none;display:none;
+     background:var(--surface);color:var(--ink);border:1px solid var(--hairline);
+     border-radius:8px;padding:.5rem .65rem;font-size:.82rem;line-height:1.35;
+     box-shadow:0 6px 24px rgba(0,0,0,.14);max-width:16rem}
+
+/* Every chart has a table-view twin. */
+.toggle{background:none;border:1px solid var(--hairline);color:var(--ink-2);
+        border-radius:999px;padding:.2rem .7rem;font:inherit;font-size:.78rem;
+        cursor:pointer;float:right;margin-top:-2.1rem}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th,td{text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--grid)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+caption{caption-side:bottom;color:var(--muted);font-size:.8rem;padding-top:.5rem;text-align:left}
+
+.caveat{background:var(--surface);border:1px solid var(--hairline);border-left:3px solid var(--baseline);
+        border-radius:10px;padding:1rem 1.2rem;color:var(--ink-2);font-size:.88rem}
+.caveat b{color:var(--ink)}
+.caveat p{margin:.4rem 0}
+
+/* Sign-in */
+#gate{max-width:24rem;margin:14vh auto;padding:0 1.25rem}
+#gate input{width:100%;padding:.6rem .7rem;font:inherit;margin-top:.3rem;
+            border:1px solid var(--hairline);border-radius:8px;
+            background:var(--plane);color:var(--ink)}
+#gate label{display:block;font-size:.85rem;color:var(--muted);margin-top:.8rem}
+#gate button{margin-top:1.1rem;padding:.6rem 1rem;font:inherit;font-weight:600;
+             border:0;border-radius:8px;background:var(--series-1);color:#fff;cursor:pointer}
+.err{color:var(--pole-up);font-size:.87rem;min-height:1.2em;margin-top:.6rem}
+[hidden]{display:none!important}
+</style>
+
+<main id="gate">
+  <h1>Oda Historikk</h1>
+  <p class="lede">Logg inn for å se dataene.</p>
+  <div class="card">
+    <label for="email">E-post</label>
+    <input id="email" type="email" autocomplete="username" value="jacob.jentoft@gmail.com">
+    <label for="password">Passord</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button id="btnSignin">Logg inn</button>
+    <p class="err" id="gateErr"></p>
+  </div>
+</main>
+
+<main id="app" hidden>
+  <h1>Oda Historikk</h1>
+  <p class="lede" id="period"></p>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="card">
+    <h2>Din personlige prisindeks</h2>
+    <p class="note">100 = første observerte pris for hver vare. Kurven er flat med vilje —
+      skalaen viser ±5 % så en bevegelse på ett prosentpoeng ikke ser dramatisk ut.</p>
+    <button class="toggle" data-for="c-index">Tabell</button>
+    <div class="scroll" id="c-index"></div>
+    <div id="t-index" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Hva som faktisk skjedde under indeksen</h2>
+    <p class="note">Endring fra første til siste observerte pris, per vare i kurven.
+      Flat indeks betyr ikke stabile priser — det betyr at de store utslagene
+      opphever hverandre.</p>
+    <button class="toggle" data-for="c-move">Tabell</button>
+    <div class="scroll" id="c-move"></div>
+    <div id="t-move" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Forbruk per måned</h2>
+    <p class="note">Faktisk belastet beløp.</p>
+    <button class="toggle" data-for="c-spend">Tabell</button>
+    <div class="scroll" id="c-spend"></div>
+    <div id="t-spend" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Basisvarer</h2>
+    <p class="note">Varer som er med i mer enn 40 % av bestillingene.</p>
+    <button class="toggle" data-for="c-staples">Tabell</button>
+    <div class="scroll" id="c-staples"></div>
+    <div id="t-staples" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Rabatt mot fakturert beløp</h2>
+    <p class="note">Positivt = du betalte mindre enn summen av varelinjene.
+      Tallet er netto: rabatter minus eventuelle gebyrer, og de to kan ikke skilles.</p>
+    <button class="toggle" data-for="c-disc">Tabell</button>
+    <div class="scroll" id="c-disc"></div>
+    <div id="t-disc" hidden></div>
+  </section>
+
+  <section class="caveat">
+    <p><b>Slik skal tallene leses.</b></p>
+    <p><b>Prisen er bare observert når du handlet.</b> Mellom kjøp antas siste kjente pris.
+      Indeksen er derfor et gulv for den reelle svingningen — den kan ikke vise en topp du aldri så.</p>
+    <p><b>Pakningsstørrelse er usynlig.</b> Ordrelinjene har ingen enhetspris, så en vare som
+      krympet fra 200 g til 175 g til samme pris ser uendret ut.</p>
+    <p><b>Indeksen måler dine priser, ikke markedets.</b> Bytter du til et billigere alternativ,
+      forsvinner den gamle varen og den nye starter på 100.</p>
+  </section>
+</main>
+
+<script type="module" src="./app.js"></script>
+</html>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="no">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Oda Historikk — Koble til</title>
+<style>
+  :root{
+    --bg:#fbfaf9; --surface:#fff; --ink:#1c1b19; --muted:#6b6862;
+    --line:#e4e1dc; --accent:#2f6f4e; --bad:#a3352b; --ok:#2f6f4e;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#16151a; --surface:#1f1e24; --ink:#eceaf0; --muted:#a29fa9;
+           --line:#33313a; --accent:#7dc79b; --bad:#e8918a; --ok:#7dc79b; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:32rem;margin:min(12vh,6rem) auto;padding:0 1.25rem}
+  h1{font-size:1.4rem;margin:0 0 .25rem}
+  .sub{color:var(--muted);margin:0 0 2rem;font-size:.95rem}
+  .card{background:var(--surface);border:1px solid var(--line);
+        border-radius:12px;padding:1.25rem;margin-bottom:1rem}
+  label{display:block;font-size:.85rem;color:var(--muted);margin:.75rem 0 .25rem}
+  input{width:100%;padding:.6rem .7rem;font:inherit;border:1px solid var(--line);
+        border-radius:8px;background:var(--bg);color:var(--ink)}
+  button{margin-top:1rem;padding:.6rem 1rem;font:inherit;font-weight:600;
+         border:0;border-radius:8px;background:var(--accent);color:var(--bg);cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .msg{font-size:.9rem;margin-top:.75rem;min-height:1.2em}
+  .err{color:var(--bad)} .ok{color:var(--ok)}
+  dl{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;margin:0;font-size:.9rem}
+  dt{color:var(--muted)} dd{margin:0;font-variant-numeric:tabular-nums}
+  a.cta{display:inline-block;margin-top:1rem;padding:.6rem 1rem;border-radius:8px;
+        background:var(--accent);color:var(--bg);text-decoration:none;font-weight:600}
+  code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+       word-break:break-all}
+  [hidden]{display:none!important}
+</style>
+
+<main>
+  <h1>Oda Historikk</h1>
+  <p class="sub">Koble Supabase-prosjektet til Oda-kontoen din.</p>
+
+  <section class="card" id="signinCard">
+    <strong>1 — Logg inn</strong>
+    <label for="email">E-post</label>
+    <input id="email" type="email" autocomplete="username" value="jacob.jentoft@gmail.com">
+    <label for="password">Passord (Supabase)</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button id="btnSignin">Logg inn</button>
+    <p class="msg" id="signinMsg"></p>
+  </section>
+
+  <section class="card" id="panel" hidden>
+    <strong>2 — Oda-tilkobling</strong>
+    <dl id="status"></dl>
+    <button id="btnConnect">Koble til Oda</button>
+    <p class="msg" id="connectMsg"></p>
+    <div id="linkBox" hidden>
+      <a class="cta" id="odaLink" target="_blank" rel="noopener">Åpne Oda og godkjenn →</a>
+      <p class="msg">Etterpå: kom tilbake hit og trykk «Oppdater status».</p>
+      <button id="btnRefresh">Oppdater status</button>
+    </div>
+  </section>
+
+  <section class="card" id="testCard" hidden>
+    <strong>3 — Test proxyen</strong>
+    <p class="sub" style="margin:.35rem 0 0">Ett lesekall som skal virke, og ett skrivekall som skal avvises.</p>
+    <button id="btnTest">Kjør tester</button>
+    <dl id="testOut"></dl>
+  </section>
+</main>
+
+<script type="module">
+const SB  = "https://ezjevbjejokpomwyrysp.supabase.co";
+// Publishable key. Not a secret: RLS is what protects the data.
+const KEY = "sb_publishable_LG5w-ftcR7uPUEA-S_SLkA_F-oTJfp4";
+
+let token = null; // kept in memory only, never persisted
+
+const $ = id => document.getElementById(id);
+const say = (el, text, cls="") => { el.textContent = text; el.className = "msg " + cls; };
+
+async function signIn() {
+  const email = $("email").value.trim();
+  const password = $("password").value;
+  if (!password) return say($("signinMsg"), "Skriv inn passordet.", "err");
+
+  $("btnSignin").disabled = true;
+  say($("signinMsg"), "Logger inn…");
+  try {
+    const res = await fetch(`${SB}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { apikey: KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error_description || data.msg || res.status);
+    token = data.access_token;
+    say($("signinMsg"), "Innlogget.", "ok");
+    $("signinCard").hidden = true;
+    $("panel").hidden = false;
+    $("testCard").hidden = false;
+    await refreshStatus();
+  } catch (e) {
+    say($("signinMsg"), "Feil: " + e.message, "err");
+  } finally {
+    $("btnSignin").disabled = false;
+  }
+}
+
+async function api(path) {
+  const res = await fetch(`${SB}/functions/v1/oda${path}`, {
+    headers: { apikey: KEY, Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.status);
+  return data;
+}
+
+/** Returns status + body without throwing, so a 403 is a result, not an error. */
+async function callTool(tool, args) {
+  const res = await fetch(`${SB}/functions/v1/oda/mcp/call`, {
+    method: "POST",
+    headers: { apikey: KEY, Authorization: `Bearer ${token}`,
+               "Content-Type": "application/json" },
+    body: JSON.stringify({ tool, arguments: args }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function runTests() {
+  $("btnTest").disabled = true;
+  $("testOut").innerHTML = "<dt>…</dt><dd>kjører</dd>";
+  try {
+    const read  = await callTool("product_search", { queries: ["melk"], size: 1 });
+    const write = await callTool("manipulate_cart", { items: [] });
+
+    const first = read.body?.result?.result?.[0]?.products?.[0];
+    $("testOut").innerHTML = `
+      <dt>product_search</dt>
+      <dd id="readRes">${read.status} — ${first ? first.name + " " + first.price + " kr" : "ingen treff"}</dd>
+      <dt>manipulate_cart</dt>
+      <dd id="writeRes">${write.status} — ${write.body?.reason ?? write.body?.error ?? ""}</dd>`;
+  } catch (e) {
+    $("testOut").innerHTML = `<dt>Feil</dt><dd>${e.message}</dd>`;
+  } finally {
+    $("btnTest").disabled = false;
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const s = await api("/status");
+    $("status").innerHTML = `
+      <dt>Klient registrert</dt><dd>${s.client_registered ? "ja" : "nei"}</dd>
+      <dt>Tilkoblet</dt><dd>${s.connected ? "ja" : "nei"}</dd>
+      <dt>Token utløper</dt><dd>${s.token_expires_at ?? "—"}</dd>`;
+    $("btnConnect").textContent = s.connected ? "Koble til på nytt" : "Koble til Oda";
+  } catch (e) {
+    say($("connectMsg"), "Kunne ikke hente status: " + e.message, "err");
+  }
+}
+
+async function connect() {
+  $("btnConnect").disabled = true;
+  say($("connectMsg"), "Registrerer klient hos Oda…");
+  try {
+    const r = await api("/auth/start");
+    $("odaLink").href = r.authorize_url;
+    $("linkBox").hidden = false;
+    say($("connectMsg"),
+        r.newly_registered ? `Ny OAuth-klient opprettet: ${r.client_id}`
+                           : `Bruker eksisterende klient: ${r.client_id}`, "ok");
+  } catch (e) {
+    say($("connectMsg"), "Feil: " + e.message, "err");
+  } finally {
+    $("btnConnect").disabled = false;
+  }
+}
+
+$("btnSignin").addEventListener("click", signIn);
+$("password").addEventListener("keydown", e => { if (e.key === "Enter") signIn(); });
+$("btnConnect").addEventListener("click", connect);
+$("btnRefresh").addEventListener("click", refreshStatus);
+$("btnTest").addEventListener("click", runTests);
+</script>
+</html>
