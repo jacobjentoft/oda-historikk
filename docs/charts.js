@@ -10,6 +10,10 @@ const el = (n, attrs = {}, text) => {
   return e;
 };
 
+/** Labels come from Oda's product names; tooltips are HTML, so escape them. */
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
 export const nok = (n) =>
   new Intl.NumberFormat("nb-NO", { maximumFractionDigits: 0 }).format(n);
 export const pct = (n) =>
@@ -158,7 +162,7 @@ export function divergingBars(host, rows, opts) {
       width: Math.max(1, Math.abs(len)), height: barH, rx: 2,
       fill: bad ? "var(--pole-up)" : "var(--pole-down)",
     });
-    hoverable(bar, host, `<b>${label(r)}</b><br>${fmt(r)}`);
+    hoverable(bar, host, `<b>${esc(label(r))}</b><br>${esc(fmt(r))}`);
     svg.appendChild(bar);
 
     // Direct-label only the extremes; the rest are carried by tooltip + table.
@@ -211,7 +215,7 @@ export function columns(host, rows, opts) {
       width: Math.max(1, bw - 2), height: Math.max(1, y(0) - y(v)),
       rx: 2, fill: "var(--series-1)",
     });
-    hoverable(bar, host, `<b>${label(r)}</b><br>${fmt(r)}`);
+    hoverable(bar, host, `<b>${esc(label(r))}</b><br>${esc(fmt(r))}`);
     svg.appendChild(bar);
     if (i % everyNth === 0) {
       svg.appendChild(el("text", {
@@ -238,7 +242,7 @@ export function hbars(host, rows, opts) {
       x: m.l, y: yy, width: Math.max(2, len), height: barH, rx: 3,
       fill: "var(--series-1)",
     });
-    hoverable(bar, host, `<b>${label(r)}</b><br>${fmt(r)}`);
+    hoverable(bar, host, `<b>${esc(label(r))}</b><br>${esc(fmt(r))}`);
     svg.appendChild(bar);
     svg.appendChild(el("text", {
       x: m.l - 10, y: yy + barH / 2 + 4, "text-anchor": "end", class: "rowlabel",

@@ -45,7 +45,7 @@
   <section class="card" id="signinCard">
     <strong>1 — Logg inn</strong>
     <label for="email">E-post</label>
-    <input id="email" type="email" autocomplete="username" value="jacob.jentoft@gmail.com">
+    <input id="email" type="email" autocomplete="username">
     <label for="password">Passord (Supabase)</label>
     <input id="password" type="password" autocomplete="current-password">
     <button id="btnSignin">Logg inn</button>
@@ -81,6 +81,9 @@ let token = null; // kept in memory only, never persisted
 
 const $ = id => document.getElementById(id);
 const say = (el, text, cls="") => { el.textContent = text; el.className = "msg " + cls; };
+// Anything from a response goes through esc() before it reaches innerHTML.
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 async function signIn() {
   const email = $("email").value.trim();
@@ -140,11 +143,11 @@ async function runTests() {
     const first = read.body?.result?.result?.[0]?.products?.[0];
     $("testOut").innerHTML = `
       <dt>product_search</dt>
-      <dd id="readRes">${read.status} — ${first ? first.name + " " + first.price + " kr" : "ingen treff"}</dd>
+      <dd id="readRes">${read.status} — ${first ? esc(first.name + " " + first.price + " kr") : "ingen treff"}</dd>
       <dt>manipulate_cart</dt>
-      <dd id="writeRes">${write.status} — ${write.body?.reason ?? write.body?.error ?? ""}</dd>`;
+      <dd id="writeRes">${write.status} — ${esc(write.body?.reason ?? write.body?.error)}</dd>`;
   } catch (e) {
-    $("testOut").innerHTML = `<dt>Feil</dt><dd>${e.message}</dd>`;
+    $("testOut").innerHTML = `<dt>Feil</dt><dd>${esc(e.message)}</dd>`;
   } finally {
     $("btnTest").disabled = false;
   }
@@ -156,7 +159,7 @@ async function refreshStatus() {
     $("status").innerHTML = `
       <dt>Klient registrert</dt><dd>${s.client_registered ? "ja" : "nei"}</dd>
       <dt>Tilkoblet</dt><dd>${s.connected ? "ja" : "nei"}</dd>
-      <dt>Token utløper</dt><dd>${s.token_expires_at ?? "—"}</dd>`;
+      <dt>Token utløper</dt><dd>${esc(s.token_expires_at ?? "—")}</dd>`;
     $("btnConnect").textContent = s.connected ? "Koble til på nytt" : "Koble til Oda";
   } catch (e) {
     say($("connectMsg"), "Kunne ikke hente status: " + e.message, "err");

@@ -1,0 +1,7 @@
+# Minimal CLI config. Everything not set here uses the CLI defaults.
+project_id = "oda-historikk"
+
+[functions.oda]
+# Oda redirects a bare browser to /auth/callback, so the gateway cannot demand
+# a JWT. Every other route authenticates in code (see the header of index.ts).
+verify_jwt = false
