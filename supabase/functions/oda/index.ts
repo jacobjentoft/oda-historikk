@@ -4,7 +4,8 @@
 //   GET  /oda/auth/start     authenticated  -> authorize_url (registers once)
 //   GET  /oda/auth/callback  public          -> protected by `state`
 //   POST /oda/mcp/call       authenticated  -> allowlisted read tools only
-//   POST /oda/sync           authenticated or scheduled -> full order sweep
+//   POST /oda/sync           authenticated or scheduled -> order sweep
+//                            (incremental; body {"full": true} for all pages)
 //
 // verify_jwt = false because Oda redirects a bare browser to the callback.
 // Every other route authenticates explicitly in code.
@@ -15,6 +16,7 @@ import {
   requireDashboardUser, rpc, secretGet, secretSet,
 } from "./shared.ts";
 import { Mcp } from "./mcp.ts";
+import { compact, pageIsSettled, timingSafeEqual } from "./lib.ts";
 
 // ---------------------------------------------------------------------------
 // Tool policy. Deny by default: anything not named here is refused.
@@ -84,17 +86,20 @@ async function authCallback(url: URL): Promise<Response> {
   if (err)             return html("Not connected", `Oda returned: ${err}`, 400);
   if (!code || !state) return html("Not connected", "Missing code or state.", 400);
 
+  // Claim the state in one statement. A separate read-then-mark would let two
+  // concurrent callbacks both see it unconsumed; a filtered PATCH can match
+  // only once, so exactly one of them gets the verifier back.
+  const now  = new Date().toISOString();
   const rows = await db(
     `oda_auth_states?state=eq.${encodeURIComponent(state)}` +
-    `&consumed_at=is.null&expires_at=gt.${new Date().toISOString()}` +
-    `&select=state,code_verifier`,
+    `&consumed_at=is.null&expires_at=gt.${now}&select=code_verifier`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ consumed_at: now }),
+    },
   );
   if (!rows?.length) return html("Not connected", "That link is expired or already used.", 400);
-
-  await db(`oda_auth_states?state=eq.${encodeURIComponent(state)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ consumed_at: new Date().toISOString() }),
-  });
 
   const cred     = await db("oda_credentials?id=eq.1&select=client_id");
   const clientId = cred?.[0]?.client_id;
@@ -189,50 +194,49 @@ async function requireSyncCaller(req: Request): Promise<string> {
   const provided = req.headers.get("x-sync-key");
   if (provided) {
     const expected = await secretGet("oda_sync_key");
-    // Length check first so a mismatch cannot be probed by timing alone.
-    if (expected && provided.length === expected.length && provided === expected) return "scheduled";
+    if (expected && await timingSafeEqual(provided, expected)) return "scheduled";
     throw json({ error: "bad sync key" }, 401);
   }
   return await requireDashboardUser(req);
 }
 
-/** Compact an Oda order into the staging shape normalize_raw_orders() expects. */
-function compact(o: any) {
-  return {
-    orderNumber: o.orderNumber,
-    deliveryDate: o.deliveryDate,
-    deliverySlotDisplay: o.deliverySlotDisplay,
-    currency: o.currency ?? "NOK",
-    grossAmount: o.grossAmount,
-    products: (o.products ?? []).map((li: any) => ({
-      id: li.product?.id,
-      n:  li.product?.name,
-      p:  Number(li.product?.price),
-      q:  Number(li.quantity),
-      t:  Number(li.totalGrossAmount),
-    })),
-  };
-}
+const PAGE_SIZE = 20;
+const MAX_PAGES = 50;
 
-/** Full order sweep. Idempotent: upsert by order_number, then re-normalise. */
+/**
+ * Order sweep. Idempotent: upsert by order_number, then re-normalise only the
+ * orders fetched. Oda lists newest first, so an incremental run stops at the
+ * first page made up entirely of orders already stored and long delivered.
+ */
 async function sync(req: Request): Promise<Response> {
   const caller = await requireSyncCaller(req);
   const started = Date.now();
+
+  const body = await req.json().catch(() => ({}));
+  const full = body?.full === true;
+
+  const known = new Set<string>(
+    full ? [] : (await db("raw_orders?select=order_number"))
+      .map((r: { order_number: string }) => r.order_number),
+  );
 
   const mcp = await Mcp.open();
   try {
     const rows: Array<{ order_number: string; payload: unknown; fetched_at: string }> = [];
     const now = new Date().toISOString();
-    let page = 1;
+    let pages = 0;
+    let truncated = false;
 
-    while (page <= 50) {
-      const r = await mcp.callTool("get_orders", { page, size: 20 });
+    for (let page = 1; ; page++) {
+      if (page > MAX_PAGES) { truncated = true; break; }
+      const r = await mcp.callTool("get_orders", { page, size: PAGE_SIZE });
       const orders = r?.orders ?? [];
+      pages = page;
       for (const o of orders) {
         rows.push({ order_number: o.orderNumber, payload: compact(o), fetched_at: now });
       }
       if (!r?.hasMore || orders.length === 0) break;
-      page++;
+      if (!full && pageIsSettled(orders, known)) break;
     }
 
     if (rows.length) {
@@ -241,17 +245,23 @@ async function sync(req: Request): Promise<Response> {
         headers: { Prefer: "resolution=merge-duplicates" },
         body: JSON.stringify(rows),
       });
-      await rpc("normalize_raw_orders", {});
+      await rpc("normalize_raw_orders", {
+        p_order_numbers: rows.map((r) => r.order_number),
+      });
     }
 
     const stats = await rpc("oda_stats", {});
     await audit({
       caller, tool: "get_orders(sweep)",
-      arguments: { pages: page, size: 20 },
-      ok: true, status_code: 200, duration_ms: Date.now() - started,
+      arguments: { full, pages, size: PAGE_SIZE },
+      // A sweep that hit the page cap still stored what it saw, but older
+      // orders were skipped -- record that rather than report a clean run.
+      ok: !truncated, status_code: 200,
+      error: truncated ? `stopped at ${MAX_PAGES} pages; older orders not fetched` : null,
+      duration_ms: Date.now() - started,
     });
     return json({
-      ok: true, caller, pages: page, orders_seen: rows.length,
+      ok: true, caller, full, pages, truncated, orders_seen: rows.length,
       ms: Date.now() - started, stats,
     });
   } catch (e) {

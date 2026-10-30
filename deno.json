@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1"
+  },
+  "tasks": {
+    "check": "deno check supabase/functions/oda/index.ts",
+    "test": "deno test supabase/functions/tests/",
+    "lint": "deno lint supabase/functions/"
+  },
+  "lint": {
+    "rules": { "exclude": ["no-explicit-any"] }
+  }
+}

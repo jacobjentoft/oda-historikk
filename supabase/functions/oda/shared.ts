@@ -2,6 +2,9 @@
 // No third-party imports: this code handles OAuth tokens, so the dependency
 // surface is kept at zero deliberately.
 
+import { escapeHtml } from "./lib.ts";
+export { pkceChallenge, randomToken } from "./lib.ts";
+
 export const SB_URL = Deno.env.get("SUPABASE_URL")!;
 export const SRK    = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -45,22 +48,6 @@ export const secretSet = (name: string, value: string) =>
 
 export const secretGet = (name: string): Promise<string | null> =>
   rpc("oda_secret_get", { p_name: name });
-
-function b64url(bytes: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-export const randomToken = (bytes = 48): string =>
-  b64url(crypto.getRandomValues(new Uint8Array(bytes)).buffer);
-
-/** PKCE S256: send the hash now, prove possession of the original later. */
-export async function pkceChallenge(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256", new TextEncoder().encode(verifier),
-  );
-  return b64url(digest);
-}
 
 /**
  * Two separate checks: the JWT proves who the caller is, dashboard_users
@@ -139,10 +126,12 @@ export const json = (body: unknown, status = 200) =>
     headers: { ...cors, "Content-Type": "application/json" },
   });
 
+/** A tiny page for the OAuth callback. Both arguments are escaped: the body
+ *  can carry text from Oda's redirect, which anyone can craft. */
 export const html = (title: string, body: string, status = 200) =>
   new Response(
-    `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
+    `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
     `<body style="font:16px/1.5 system-ui;max-width:34rem;margin:4rem auto;padding:0 1rem">` +
-    `<h1 style="font-size:1.25rem">${title}</h1><p>${body}</p></body>`,
+    `<h1 style="font-size:1.25rem">${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></body>`,
     { status, headers: { ...cors, "Content-Type": "text/html; charset=utf-8" } },
   );
