@@ -116,7 +116,7 @@ export async function audit(entry: {
 // bearer token, never a cookie, so a wildcard origin grants nothing on its own.
 export const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-sync-key",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
