@@ -76,6 +76,9 @@ svg{display:block;overflow:visible}
 table{width:100%;border-collapse:collapse;font-size:.86rem}
 th,td{text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--grid)}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.picker{font:inherit;font-size:.86rem;color:var(--ink);background:var(--plane);
+        border:1px solid var(--hairline);border-radius:8px;padding:.35rem .5rem;
+        margin:0 0 .9rem;max-width:100%}
 caption{caption-side:bottom;color:var(--muted);font-size:.8rem;padding-top:.5rem;text-align:left}
 
 .caveat{background:var(--surface);border:1px solid var(--hairline);border-left:3px solid var(--baseline);
@@ -134,6 +137,26 @@ caption{caption-side:bottom;color:var(--muted);font-size:.8rem;padding-top:.5rem
   </section>
 
   <section class="card">
+    <h2>Prishistorikk per vare</h2>
+    <p class="note">Hver pris du har betalt. Trappen holder siste kjente pris til neste kjøp —
+      samme antakelse som indeksen. Stiplet linje = første pris.</p>
+    <button class="toggle" data-for="c-hist">Tabell</button>
+    <select id="pick" class="picker" aria-label="Velg vare"></select>
+    <div class="scroll" id="c-hist"></div>
+    <div id="t-hist" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Betalt over din egen laveste pris</h2>
+    <p class="note" id="overpayNote">Per vare: (pris − laveste pris du noen gang har betalt) × antall.
+      Det er din egen beste pris, ikke et bevis på at den var tilgjengelig den dagen.
+      Varer som selges per stykk med varierende vekt kan gi utslag uten at kiloprisen endret seg.</p>
+    <button class="toggle" data-for="c-overpay">Tabell</button>
+    <div class="scroll" id="c-overpay"></div>
+    <div id="t-overpay" hidden></div>
+  </section>
+
+  <section class="card">
     <h2>Forbruk per måned</h2>
     <p class="note">Faktisk belastet beløp.</p>
     <button class="toggle" data-for="c-spend">Tabell</button>
@@ -156,6 +179,23 @@ caption{caption-side:bottom;color:var(--muted);font-size:.8rem;padding-top:.5rem
     <button class="toggle" data-for="c-disc">Tabell</button>
     <div class="scroll" id="c-disc"></div>
     <div id="t-disc" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Hvor ofte du handler</h2>
+    <p class="note" id="cadenceNote">Antall dager mellom to leveringer.</p>
+    <button class="toggle" data-for="c-cadence">Tabell</button>
+    <div class="scroll" id="c-cadence"></div>
+    <div id="t-cadence" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Hvor lik er kurven forrige gang?</h2>
+    <p class="note" id="simNote">Andel varer felles med forrige bestilling: felles varer ÷ alle
+      ulike varer i de to bestillingene.</p>
+    <button class="toggle" data-for="c-sim">Tabell</button>
+    <div class="scroll" id="c-sim"></div>
+    <div id="t-sim" hidden></div>
   </section>
 
   <section class="caveat">
