@@ -187,7 +187,12 @@ export function divergingBars(host, rows, opts) {
  * ramp on categories: that would double-encode height as colour).
  * ------------------------------------------------------------------ */
 export function columns(host, rows, opts) {
-  const { value, label, fmt, everyNth = 2 } = opts;
+  // showLabel picks which bars get an axis label; the default is every Nth.
+  // tickFmt formats the y-axis (kroner by default, plain counts or % otherwise).
+  const {
+    value, label, fmt, everyNth = 2,
+    showLabel = (r, i) => i % everyNth === 0, tickFmt = nok,
+  } = opts;
   const w = 720, h = 240, m = { t: 16, r: 12, b: 38, l: 52 };
   const svg = frame(w, h);
 
@@ -205,11 +210,19 @@ export function columns(host, rows, opts) {
     }));
     svg.appendChild(el("text", {
       x: m.l - 8, y: y(v) + 4, "text-anchor": "end", class: "tick",
-    }, nok(v)));
+    }, tickFmt(v)));
   }
 
   rows.forEach((r, i) => {
     const v = value(r);
+    // A zero is drawn as nothing, not a 1px sliver: in a histogram an empty
+    // bin must read as empty. The label still marks its place on the axis.
+    if (showLabel(r, i)) {
+      svg.appendChild(el("text", {
+        x: m.l + i * bw + bw / 2, y: h - 14, "text-anchor": "middle", class: "tick",
+      }, label(r)));
+    }
+    if (!v) return;
     const bar = el("rect", {
       x: m.l + i * bw + 1, y: y(v),
       width: Math.max(1, bw - 2), height: Math.max(1, y(0) - y(v)),
@@ -217,11 +230,6 @@ export function columns(host, rows, opts) {
     });
     hoverable(bar, host, `<b>${esc(label(r))}</b><br>${esc(fmt(r))}`);
     svg.appendChild(bar);
-    if (i % everyNth === 0) {
-      svg.appendChild(el("text", {
-        x: m.l + i * bw + bw / 2, y: h - 14, "text-anchor": "middle", class: "tick",
-      }, label(r)));
-    }
   });
 
   host.replaceChildren(svg);
@@ -251,6 +259,74 @@ export function hbars(host, rows, opts) {
       x: m.l + len + 8, y: yy + barH / 2 + 4, class: "rowvalue",
     }, fmt(r)));
   });
+
+  host.replaceChildren(svg);
+}
+
+/* ------------------------------------------------------------------ *
+ * Price history for one product, drawn as steps: a price holds until the
+ * next purchase, the same carry-forward the index assumes. Dashed line =
+ * first price paid. x is real time, so long gaps between buys look long.
+ * ------------------------------------------------------------------ */
+export function priceSteps(host, rows) {
+  const w = 720, h = 240, m = { t: 16, r: 18, b: 34, l: 52 };
+  const svg = frame(w, h);
+
+  const t = rows.map((r) => Date.parse(r.delivery_date));
+  const p = rows.map((r) => Number(r.unit_price));
+  const first = Number(rows[0].first_price);
+
+  const t0 = t[0], t1 = Math.max(t.at(-1), t0 + 86_400_000);
+  // Pad the y-range so a flat price is not drawn as a line on the frame edge.
+  const lo0 = Math.min(...p, first), hi0 = Math.max(...p, first);
+  const pad = Math.max((hi0 - lo0) * 0.15, hi0 * 0.03);
+  const raw = (hi0 + pad) - (lo0 - pad);
+  const step = [1, 2, 2.5, 5, 10, 20, 25, 50, 100].find((s) => raw / s <= 5) ?? 100;
+  const lo = Math.floor((lo0 - pad) / step) * step;
+  const hi = Math.ceil((hi0 + pad) / step) * step;
+
+  const x = (v) => m.l + ((v - t0) * (w - m.l - m.r)) / (t1 - t0);
+  const y = (v) => m.t + ((hi - v) * (h - m.t - m.b)) / (hi - lo);
+
+  // A 2.5 kr step needs its decimal: nok() would round 22.5 to "23".
+  const tick = Number.isInteger(step) ? nok : (v) => v.toFixed(1).replace(".", ",");
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    svg.appendChild(el("line", {
+      x1: m.l, x2: w - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)", "stroke-width": 1,
+    }));
+    svg.appendChild(el("text", {
+      x: m.l - 8, y: y(v) + 4, "text-anchor": "end", class: "tick",
+    }, tick(v)));
+  }
+
+  svg.appendChild(el("line", {
+    x1: m.l, x2: w - m.r, y1: y(first), y2: y(first),
+    stroke: "var(--baseline)", "stroke-width": 1.5, "stroke-dasharray": "4 4",
+  }));
+
+  let d = `M${x(t[0])},${y(p[0])}`;
+  for (let i = 1; i < rows.length; i++) d += ` H${x(t[i])} V${y(p[i])}`;
+  svg.appendChild(el("path", {
+    d, fill: "none", stroke: "var(--series-1)", "stroke-width": 2,
+    "stroke-linejoin": "round",
+  }));
+
+  rows.forEach((r, i) => {
+    const dot = el("circle", {
+      cx: x(t[i]), cy: y(p[i]), r: 3.5,
+      fill: "var(--series-1)", stroke: "var(--surface)", "stroke-width": 2,
+    });
+    hoverable(dot, host,
+      `<b>${esc(r.delivery_date)}</b><br>${esc(r.unit_price)} kr` +
+      ` (${esc(pct(Number(r.pct_vs_first)))} mot første pris)`);
+    svg.appendChild(dot);
+  });
+
+  for (const [v, anchor] of [[t[0], "start"], [t1, "end"]]) {
+    svg.appendChild(el("text", {
+      x: x(v), y: h - 12, "text-anchor": anchor, class: "tick",
+    }, new Date(v).toISOString().slice(0, 10)));
+  }
 
   host.replaceChildren(svg);
 }
